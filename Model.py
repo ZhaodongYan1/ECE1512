@@ -5,7 +5,7 @@ import sys
 import numpy as np
 import tensorflow as tf
 import os
-
+import editdistance
 
 class DecoderType:
 	BestPath = 0
@@ -18,7 +18,7 @@ class Model:
 
 	# model constants
 	batchSize = 50
-	imgSize = (128, 32)
+	imgSize = (128,32)
 	maxTextLen = 32
 
 	def __init__(self, charList, decoderType=DecoderType.BestPath, mustRestore=False, dump=False):
@@ -69,7 +69,7 @@ class Model:
 			conv_norm = tf.layers.batch_normalization(conv, training=self.is_train)
 			relu = tf.nn.relu(conv_norm)
 			pool = tf.nn.max_pool(relu, (1, poolVals[i][0], poolVals[i][1], 1), (1, strideVals[i][0], strideVals[i][1], 1), 'VALID')
-
+			print(pool)
 		self.cnnOut4d = pool
 
 
@@ -170,6 +170,8 @@ class Model:
 				shape[1] = len(labelStr)
 			# put each label into sparse tensor
 			for (i, label) in enumerate(labelStr):
+
+                
 				indices.append([batchElement, i])
 				values.append(label)
 
