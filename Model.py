@@ -5,14 +5,25 @@ import sys
 import numpy as np
 import tensorflow as tf
 import os
+<<<<<<< HEAD
 import params
 import math
+=======
+import editdistance
+
+class DecoderType:
+	BestPath = 0
+	BeamSearch = 1
+	WordBeamSearch = 2
+
+
+>>>>>>> 81cb830bad266b4aad4016ef0bf64cb63e6a9720
 class Model: 
 	"minimalistic TF model for HTR"
 
 	# model constants
 	batchSize = 50
-	imgSize = (128, 32)
+	imgSize = (128,32)
 	maxTextLen = 32
 
 	def __init__(self, charList, decoderType='BestPath', mustRestore=False, dump=False):
@@ -63,7 +74,7 @@ class Model:
 			conv_norm = tf.layers.batch_normalization(conv, training=self.is_train)
 			relu = tf.nn.relu(conv_norm)
 			pool = tf.nn.max_pool(relu, (1, poolVals[i][0], poolVals[i][1], 1), (1, strideVals[i][0], strideVals[i][1], 1), 'VALID')
-
+			print(pool)
 		self.cnnOut4d = pool
 
 
@@ -154,9 +165,22 @@ class Model:
 		shape = [len(texts), -math.inf] # last entry must be max(labelList[i])
 		for (batchElement, text) in enumerate(texts):
 			labelStr = [self.charList.index(c) for c in text]
+<<<<<<< HEAD
 			shape[1] = max(shape[1],len(labelStr))
 			values += labelStr
 			indices += [[batchElement, i] for (i, label) in enumerate(labelStr)]
+=======
+			# sparse tensor must have size of max. label-string
+			if len(labelStr) > shape[1]:
+				shape[1] = len(labelStr)
+			# put each label into sparse tensor
+			for (i, label) in enumerate(labelStr):
+
+                
+				indices.append([batchElement, i])
+				values.append(label)
+
+>>>>>>> 81cb830bad266b4aad4016ef0bf64cb63e6a9720
 		return (indices, values, shape)
 
 

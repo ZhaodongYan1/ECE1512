@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict 
-from torch.autograd import Variable
 use_cuda = torch.cuda.is_available()
 if use_cuda:
     cuda = torch.device("cuda:0")
@@ -23,12 +22,11 @@ class DecoderType:
 	WordBeamSearch = 2
     
 class HTC(nn.Module):
-
+    batchSize = 50
+    imgSize = (128,32)
+    maxTextLen = 32
     def __init__(self, output_directory,charList,decoderType=DecoderType.BestPath):
           super(HTC, self).__init__()
-          self.batchSize = 50
-          self.imgSize = (128,32)
-          self.maxTextLen = 32
           self. charList = charList
           self.output_directory = output_directory
           self.decoderType = decoderType
@@ -39,42 +37,36 @@ class HTC(nn.Module):
           self.featureVals = [1,32,64,128,128,256]
           self.poolVals = [(2,2),(2,2),(1,2),(1,2),(1,2)]
           self.strideVals = [(2,2),(2,2),(1,2),(1,2),(1,2)]
-          self.lstm = nn.LSTM(256,40, 2, batch_first=True,bidirectional=True)
+          self.lstm = nn.LSTM(256,40, 2, batch_first=True,bidirectional=True)  
           self.batchesTrained = 0
-          self.h0 = torch.randn(4,50, 40).cuda()
-          self.c0 = torch.randn(4,50, 40).cuda()
-          self.conv1 = nn.Conv2d(self.featureVals[0], self.featureVals[1], self.kernelVals[0],padding=(2,2))
-          self.conv2 = nn.Conv2d(self.featureVals[1], self.featureVals[2], self.kernelVals[1],padding=(2,2))
-          self.conv3 = nn.Conv2d(self.featureVals[2], self.featureVals[3], self.kernelVals[2],padding=(1,1))
-          self.conv4 = nn.Conv2d(self.featureVals[3], self.featureVals[4], self.kernelVals[3],padding=(1,1))
-          self.conv5 = nn.Conv2d(self.featureVals[4], self.featureVals[5], self.kernelVals[4],padding=(1,1))
-          if use_cuda:
-              self.cuda()
+           
     ''' Input is a list of strings
     '''
     def forward(self, x):
-         
+         # Initially x is numpy array of shape (batch,height,Width)
              
-         x = torch.unsqueeze(x,1).cuda()
+         x = torch.unsqueeze(x,1)
         # Shape of x: (batch,number of channels, H=128,W=32)
+        
          # formula for conv2d: Hout = (Hin+2*pad[0]-1*kernel_size[0]-1)/stride[0]+1; same for w
-#         self.cuda()
-
-         
-             
-         x = F.relu(self.conv1(x))   
+         conv1 = nn.Conv2d(self.featureVals[0], self.featureVals[1], self.kernelVals[0],padding=(2,2))
+         x = F.relu(conv1(x))
          x = F.max_pool2d(x,self.poolVals[0],stride=self.strideVals[0])
 
-         x = F.relu(self.conv2(x))
+         conv2 = nn.Conv2d(self.featureVals[1], self.featureVals[2], self.kernelVals[1],padding=(2,2))
+         x = F.relu(conv2(x))
          x = F.max_pool2d(x,self.poolVals[1],stride=self.strideVals[1])
-
-         x = F.relu(self.conv3(x))
+         
+         conv3 = nn.Conv2d(self.featureVals[2], self.featureVals[3], self.kernelVals[2],padding=(1,1))
+         x = F.relu(conv3(x))
          x = F.max_pool2d(x,self.poolVals[2],stride=self.strideVals[2])
          
-         x = F.relu(self.conv4(x))
+         conv4 = nn.Conv2d(self.featureVals[3], self.featureVals[4], self.kernelVals[3],padding=(1,1))
+         x = F.relu(conv4(x))
          x = F.max_pool2d(x,self.poolVals[3],stride=self.strideVals[3])
 
-         x = F.relu(self.conv5(x))
+         conv5 = nn.Conv2d(self.featureVals[4], self.featureVals[5], self.kernelVals[4],padding=(1,1))
+         x = F.relu(conv5(x))
          x = F.max_pool2d(x,self.poolVals[4],stride=self.strideVals[4])
          
          # Shape of x: (batch,256,32,1)
@@ -87,8 +79,10 @@ class HTC(nn.Module):
 #          ('LSTM1', nn.LSTM(256, 256, 1)),
 #          ('LSTM1', nn.LSTM(256, 40, 1)),
 #          ])) 
-#         hidden = torch.zeros(2,50,40).cuda()
-         x2,hidden=self.lstm(x,(self.h0,self.c0))            
+         hidden = torch.zeros(2,50,40)
+         h0 = torch.randn(4,50, 40)
+         c0 = torch.randn(4,50, 40)
+         x2,hidden=self.lstm(x,(h0,c0))            
          # Shape of x2: batch,32,80
          x2 = x2.transpose(0,1).contiguous()
          # Shape of x2: 32,batch,80
@@ -150,17 +144,11 @@ class HTC(nn.Module):
         optimizer = torch.optim.RMSprop(self.parameters(), lr=learning_rate)
         optimizer.zero_grad()
         x = torch.tensor(batch.imgs).float()
-        x.contiguous()
-        target = torch.tensor(sparse).long()
-        if use_cuda:
-            x = x.cuda()
-            target = target.cuda()
-        x = Variable(x)
-        target = Variable(target)
-        output = self(x)
+        output = self.forward(x)
         input_lengths = torch.full(size=(numBatchElements,), fill_value=output.size(0), dtype=torch.long)
         target_lengths = torch.tensor(lengths).long()
         ctc_loss = nn.CTCLoss()
+        target = torch.tensor(sparse).long()
 #        print(output[0],target[0])
         loss = ctc_loss(output,target,input_lengths, target_lengths)
         loss.backward()
@@ -172,8 +160,7 @@ class HTC(nn.Module):
         # Parameters
     	"train NN"
     	if use_cuda:
-            self.to(cuda)
-            
+            self = self.to(cuda)
     	epoch = 0 # number of training epochs since start
     	bestCharErrorRate = float('inf') # best valdiation character error rate
     	noImprovementSince = 0 # number of epochs no improvement of character error rate occured
@@ -244,10 +231,7 @@ class HTC(nn.Module):
 		
 		# decode, optionally save RNN output
         numBatchElements = len(batch.imgs)
-        x = torch.tensor(batch.imgs).float()
-        if use_cuda:
-            x = x.cuda()
-        ctcOutput = self(x)
+        ctcOutput = self.forward(batch.imgs)
         texts = self.decoderOutputToText(ctcOutput, numBatchElements)
 		
 #		# feed RNN output and recognized text into CTC loss to compute labeling probability
