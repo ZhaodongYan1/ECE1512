@@ -4,18 +4,9 @@ from __future__ import print_function
 import cv2
 import editdistance
 from DataLoader import DataLoader, Batch
-from Model import Model, DecoderType
+from Model import Model
 from SamplePreprocessor import preprocess
 import params
-
-class FilePaths:
-	"filenames and paths to data"
-	fnCharList = params.root_dir+'results/charList.txt'
-	fnAccuracy = params.root_dir+'results/accuracy.txt'
-	fnTrain = 'D:/projects/DATA/IAM/'
-	fnInfer = params.root_dir+'data/test.png'
-	fnCorpus = params.root_dir+'data/corpus.txt'
-
 
 def train(model, loader):
 	"train NN"
@@ -45,7 +36,7 @@ def train(model, loader):
 			bestCharErrorRate = charErrorRate
 			noImprovementSince = 0
 			model.save()
-			open(FilePaths.fnAccuracy, 'w').write('Validation character error rate of saved model: %f%%' % (charErrorRate*100.0))
+			open(params.fnAccuracy, 'w').write('Validation character error rate of saved model: %f%%' % (charErrorRate*100.0))
 		else:
 			print('Character error rate not improved')
 			noImprovementSince += 1
@@ -54,7 +45,6 @@ def train(model, loader):
 		if noImprovementSince >= earlyStopping:
 			print('No more improvement since %d epochs. Training stopped.' % earlyStopping)
 			break
-
 
 def validate(model, loader):
 	"validate NN"
@@ -85,7 +75,6 @@ def validate(model, loader):
 	print('Character error rate: %f%%. Word accuracy: %f%%.' % (charErrorRate*100.0, wordAccuracy*100.0))
 	return charErrorRate
 
-
 def infer(model, fnImg):
 	"recognize text in image provided by file path"
 	img = preprocess(cv2.imread(fnImg, cv2.IMREAD_GRAYSCALE), Model.imgSize)
@@ -94,49 +83,32 @@ def infer(model, fnImg):
 	print('Recognized:', '"' + recognized[0] + '"')
 	print('Probability:', probability[0])
 
-
 def main():
 	"main function"
-	# optional command line args
-#	parser = argparse.ArgumentParser()
-#	parser.add_argument('--train', help='train the NN', action='store_true')
-#	parser.add_argument('--validate', help='validate the NN', action='store_true')
-#	parser.add_argument('--beamsearch', help='use beam search instead of best path decoding', action='store_true')
-#	parser.add_argument('--wordbeamsearch', help='use word beam search instead of best path decoding', action='store_true')
-#	parser.add_argument('--dump', help='dump output of NN to CSV file(s)', action='store_true')
-
-#	args = parser.parse_args()
-
-	decoderType = DecoderType.BestPath
-	if params.beamsearch:
-		decoderType = DecoderType.BeamSearch
-	elif params.wordbeamsearch:
-		decoderType = DecoderType.WordBeamSearch
-
 	# train or validate on IAM dataset	
 	if params.train or params.validate:
 		# load training data, create TF model
-		loader = DataLoader(FilePaths.fnTrain, Model.batchSize, Model.imgSize, Model.maxTextLen)
+		loader = DataLoader(params.fnTrain, params.batchSize, params.imgSize, params.maxTextLen)
 
 		# save characters of model for inference mode
-		open(FilePaths.fnCharList, 'w').write(str().join(loader.charList))
+		open(params.fnCharList, 'w').write(str().join(loader.charList))
 		
 		# save words contained in dataset into file
-		open(FilePaths.fnCorpus, 'w').write(str(' ').join(loader.trainWords + loader.validationWords))
+		open(params.fnCorpus, 'w').write(str(' ').join(loader.trainWords + loader.validationWords))
 
 		# execute training or validation
 		if params.train:
-			model = Model(loader.charList, decoderType)
+			model = Model(loader.charList, params.decoderType)
 			train(model, loader)
 		elif params.validate:
-			model = Model(loader.charList, decoderType, mustRestore=True)
+			model = Model(loader.charList, params.decoderType, mustRestore=True)
 			validate(model, loader)
 
 	# infer text on test image
 	else:
-		print(open(FilePaths.fnAccuracy).read())
-		model = Model(open(FilePaths.fnCharList).read(), decoderType, mustRestore=True, dump=params.dump)
-		infer(model, FilePaths.fnInfer)
+		print(open(params.fnAccuracy).read())
+		model = Model(open(params.fnCharList).read(), params.decoderType, mustRestore=True, dump=params.dump)
+		infer(model, params.fnInfer)
 
 
 if __name__ == '__main__':

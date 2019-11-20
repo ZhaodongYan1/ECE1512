@@ -5,14 +5,8 @@ import sys
 import numpy as np
 import tensorflow as tf
 import os
-
-
-class DecoderType:
-	BestPath = 0
-	BeamSearch = 1
-	WordBeamSearch = 2
-
-
+import params
+import math
 class Model: 
 	"minimalistic TF model for HTR"
 
@@ -21,7 +15,7 @@ class Model:
 	imgSize = (128, 32)
 	maxTextLen = 32
 
-	def __init__(self, charList, decoderType=DecoderType.BestPath, mustRestore=False, dump=False):
+	def __init__(self, charList, decoderType='BestPath', mustRestore=False, dump=False):
 		"init model: add CNN, RNN and CTC and initialize TF"
 		self.dump = dump
 		self.charList = charList
@@ -112,11 +106,11 @@ class Model:
 		self.lossPerElement = tf.nn.ctc_loss(labels=self.gtTexts, inputs=self.savedCtcInput, sequence_length=self.seqLen, ctc_merge_repeated=True)
 
 		# decoder: either best path decoding or beam search decoding
-		if self.decoderType == DecoderType.BestPath:
+		if self.decoderType == 'BestPath':
 			self.decoder = tf.nn.ctc_greedy_decoder(inputs=self.ctcIn3dTBC, sequence_length=self.seqLen)
-		elif self.decoderType == DecoderType.BeamSearch:
+		elif self.decoderType == 'BeamSearch':
 			self.decoder = tf.nn.ctc_beam_search_decoder(inputs=self.ctcIn3dTBC, sequence_length=self.seqLen, beam_width=50, merge_repeated=False)
-		elif self.decoderType == DecoderType.WordBeamSearch:
+		elif self.decoderType == 'WordBeamSearch':
 			# import compiled word beam search operation (see https://github.com/githubharald/CTCWordBeamSearch)
 			word_beam_search_module = tf.load_op_library('TFWordBeamSearch.so')
 
@@ -156,23 +150,13 @@ class Model:
 
 
 	def toSparse(self, texts):
-		"put ground truth texts into sparse tensor for ctc_loss"
-		indices = []
-		values = []
-		shape = [len(texts), 0] # last entry must be max(labelList[i])
-
-		# go over all texts
+		indices,values = [],[]
+		shape = [len(texts), -math.inf] # last entry must be max(labelList[i])
 		for (batchElement, text) in enumerate(texts):
-			# convert to string of label (i.e. class-ids)
 			labelStr = [self.charList.index(c) for c in text]
-			# sparse tensor must have size of max. label-string
-			if len(labelStr) > shape[1]:
-				shape[1] = len(labelStr)
-			# put each label into sparse tensor
-			for (i, label) in enumerate(labelStr):
-				indices.append([batchElement, i])
-				values.append(label)
-
+			shape[1] = max(shape[1],len(labelStr))
+			values += labelStr
+			indices += [[batchElement, i] for (i, label) in enumerate(labelStr)]
 		return (indices, values, shape)
 
 
@@ -183,27 +167,20 @@ class Model:
 		encodedLabelStrs = [[] for i in range(batchSize)]
 
 		# word beam search: label strings terminated by blank
-		if self.decoderType == DecoderType.WordBeamSearch:
+		if self.decoderType == 'WordBeamSearch':
 			blank=len(self.charList)
 			for b in range(batchSize):
 				for label in ctcOutput[b]:
 					if label==blank:
 						break
 					encodedLabelStrs[b].append(label)
-
-		# TF decoders: label strings are contained in sparse tensor
 		else:
-			# ctc returns tuple, first element is SparseTensor 
-			decoded=ctcOutput[0][0] 
-
-			# go over all indices and save mapping: batch -> values
+			decoded=ctcOutput[0][0]
 			idxDict = { b : [] for b in range(batchSize) }
 			for (idx, idx2d) in enumerate(decoded.indices):
 				label = decoded.values[idx]
 				batchElement = idx2d[0] # index according to [b,t]
 				encodedLabelStrs[batchElement].append(label)
-
-		# map labels to chars for all batch elements
 		return [str().join([self.charList[c] for c in labelStr]) for labelStr in encodedLabelStrs]
 
 
@@ -211,7 +188,7 @@ class Model:
 		"feed a batch into the NN to train it"
 		numBatchElements = len(batch.imgs)
 		sparse = self.toSparse(batch.gtTexts)
-		rate = 0.01 if self.batchesTrained < 10 else (0.001 if self.batchesTrained < 10000 else 0.0001) # decay learning rate
+		rate = params.initialLearningRate*(params.momentum**self.batchesTrained) # decay learning rate
 		evalList = [self.optimizer, self.loss]
 		feedDict = {self.inputImgs : batch.imgs, self.gtTexts : sparse , self.seqLen : [Model.maxTextLen] * numBatchElements, self.learningRate : rate, self.is_train: True}
 		(_, lossVal) = self.sess.run(evalList, feedDict)
@@ -271,5 +248,5 @@ class Model:
 	def save(self):
 		"save model to file"
 		self.snapID += 1
-		self.saver.save(self.sess, '../model/snapshot', global_step=self.snapID)
+		self.saver.save(self.sess, params.outputDir, global_step=self.snapID)
  
